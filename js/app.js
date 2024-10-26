@@ -1,4 +1,5 @@
 let canvas = new fabric.Canvas('annotation-canvas');
+let isPDF = false;
 
 document.addEventListener('DOMContentLoaded', function() {
 

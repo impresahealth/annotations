@@ -7,6 +7,7 @@ let zoomLevel = 1.0;  // Default zoom level
 let pageAnnotations = {};  // Store annotations for each page
 
 function renderPDF(file, canvas, updatePageDisplay) {
+  isPDF = true;  // Set flag to indicate PDF
   const reader = new FileReader();
   reader.onload = function(event) {
       const typedArray = new Uint8Array(event.target.result);
@@ -25,6 +26,7 @@ function renderPDF(file, canvas, updatePageDisplay) {
 }
 
 function renderPage(pageNumber, canvas) {
+  isPDF = true;  // Set flag to indicate PDF
   pdfDoc.getPage(pageNumber).then(function(page) {
     const viewport = page.getViewport({ scale: zoomLevel });
 

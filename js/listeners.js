@@ -31,7 +31,17 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('undoButton').addEventListener('click', undoLastAnnotation);
     document.getElementById('clearButton').addEventListener('click', clearAllAnnotations);
     //document.getElementById('downloadButton').addEventListener('click', download);
-    document.getElementById('downloadButton').addEventListener('click', downloadPDFWithAnnotations);
+// Event listener for the download button
+    document.getElementById('downloadButton').addEventListener('click', function() {
+      const fileType = getFileType(); // Assume a function that determines if it's PDF or PNG
+      download(canvas, fileType);
+    });
+
+    function getFileType() {
+      // Add logic to determine the type based on your application
+      // e.g., return 'PDF' for PDF files, 'PNG' for images
+      return isPDF ? 'PDF' : 'PNG'; // You can set `isPDF` based on file type loaded
+    }
 
     function saveCurrentPageAnnotations(canvas, currentPage) {
       if (canvas) {

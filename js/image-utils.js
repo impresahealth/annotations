@@ -1,22 +1,32 @@
-// image-utils.js
-
 function renderImage(file, canvas) {
-    const reader = new FileReader();
-    reader.onload = function(event) {
-      // Load the image as a low-resolution version first
-      fabric.Image.fromURL(event.target.result, function(img) {
-        const scaleFactor = Math.min(600 / img.width, 600 / img.height);  // Scale down to a smaller preview size
-        img.scale(scaleFactor);  // Scale the image for preview
-  
-        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-  
-        // Load the high-resolution version in the background
-        fabric.Image.fromURL(event.target.result, function(highResImg) {
-          highResImg.scaleToWidth(canvas.getWidth());  // Scale high-res image
-          canvas.setBackgroundImage(highResImg, canvas.renderAll.bind(canvas));
-        });
-      }, { crossOrigin: 'Anonymous' });
-    };
-    reader.readAsDataURL(file);
-  }
-  
+  isPDF = false;  // Set flag to indicate PDF
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    // Set desired canvas size (for example, 800x600)
+    const canvasWidth = 800;
+    const canvasHeight = 600;
+    canvas.setWidth(canvasWidth);
+    canvas.setHeight(canvasHeight);
+
+    // Load the image and scale it to fit within the canvas while maintaining aspect ratio
+    fabric.Image.fromURL(event.target.result, function(img) {
+      // Calculate scale factor to fit image within canvas
+      const scaleFactor = Math.min(canvasWidth / img.width, canvasHeight / img.height);
+      img.scale(scaleFactor);
+
+      // Center the image on the canvas
+      img.set({
+        left: (canvasWidth - img.getScaledWidth()) / 2,
+        top: (canvasHeight - img.getScaledHeight()) / 2,
+        originX: 'left',
+        originY: 'top'
+      });
+
+      // Set the image as the background
+      canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+
+      console.log("Image scaled to fit canvas dimensions with aspect ratio maintained.");
+    }, { crossOrigin: 'Anonymous' });
+  };
+  reader.readAsDataURL(file);
+}

@@ -41,6 +41,28 @@ function clearAllAnnotations() {
   console.log("Cleared all annotations, background preserved.");
 }
 
+function download(canvas, fileType) {
+  if (fileType === 'PNG') {
+    downloadAsPNG(canvas);
+  } else if (fileType === 'PDF') {
+    downloadPDFWithAnnotations();
+  }
+}
+
+function downloadAsPNG(canvas) {
+  const dataURL = canvas.toDataURL({
+    format: 'png',
+    quality: 1.0
+  });
+
+  const link = document.createElement('a');
+  link.href = dataURL;
+  link.download = 'annotated-image.png';
+  link.click();
+}
+
+
+
 function downloadPDFWithAnnotations() {
   // Get the actual dimensions of the canvas
   const canvasWidth = canvas.getWidth();
