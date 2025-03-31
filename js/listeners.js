@@ -1,101 +1,118 @@
-document.addEventListener('DOMContentLoaded', function() {
-    // File upload handling (PDF or images)
-    const fileUpload = document.getElementById('file-upload');
-    if (fileUpload) {
-      fileUpload.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (file) {
-          const fileType = file.type;
-          if (fileType === 'application/pdf') {
-            renderPDF(file, canvas, updatePageDisplay);  // PDF rendering
-          } else if (fileType.startsWith('image/')) {
-            renderImage(file, canvas);  // Image rendering
-          } else {
-            console.error('Unsupported file type. Please upload a PDF, PNG, or JPG.');
-          }
-        }
-      });
+// listeners.js
+
+document.addEventListener('DOMContentLoaded', () => {
+  const fileUpload = document.getElementById('file-upload');
+  const downloadButton = document.getElementById('downloadButton');
+
+  /////////////////////////////////
+  // 📁 File Upload Handler
+  /////////////////////////////////
+  fileUpload?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.type === 'application/pdf') {
+      renderPDF(file, canvas, updatePageDisplay);
+    } else if (file.type.startsWith('image/')) {
+      renderImage(file, canvas);
+    } else {
+      alert('Unsupported file type. Please upload a PDF or image.');
     }
-  
-    // Event listeners for annotation tools
-    document.getElementById('addTextButton').addEventListener('click', addText);
-    document.getElementById('addLineButton').addEventListener('click', addLine);
-    document.getElementById('addCircleButton').addEventListener('click', addCircle);
-    document.getElementById('addRectangleButton').addEventListener('click', addRectangle);
-    document.getElementById('addTriangleButton').addEventListener('click', addTriangle);
-    document.getElementById('pointerButton').addEventListener('click', selectPointer);
-    document.getElementById('signatureButton').addEventListener('click', openSignatureModal);
-    document.getElementById('dateButton').addEventListener('click', addDate);
-    document.getElementById('freeDrawButton').addEventListener('click', addFreeDraw);
-    document.getElementById('highlighterButton').addEventListener('click', addHighlighter);
-    document.getElementById('undoButton').addEventListener('click', undoLastAnnotation);
-    document.getElementById('clearButton').addEventListener('click', clearAllAnnotations);
-    //document.getElementById('downloadButton').addEventListener('click', download);
-// Event listener for the download button
-    document.getElementById('downloadButton').addEventListener('click', function() {
-      const fileType = getFileType(); // Assume a function that determines if it's PDF or PNG
-      download(canvas, fileType);
-    });
-
-    function getFileType() {
-      // Add logic to determine the type based on your application
-      // e.g., return 'PDF' for PDF files, 'PNG' for images
-      return isPDF ? 'PDF' : 'PNG'; // You can set `isPDF` based on file type loaded
-    }
-
-    function saveCurrentPageAnnotations(canvas, currentPage) {
-      if (canvas) {
-        // Serialize the canvas as JSON and save it to the pageAnnotations object
-        pageAnnotations[currentPage] = JSON.stringify(canvas);
-        console.log(`Annotations saved for page ${currentPage}.`);
-      } else {
-        console.warn(`Canvas not found while trying to save annotations for page ${currentPage}.`);
-      }
-    }
-
-
-// Example for page navigation (prev/next page buttons)
-document.getElementById('next-page').addEventListener('click', function() {
-  saveCurrentPageAnnotations(canvas, currentPage);  // Save annotations before navigating
-  if (currentPage < totalPages) {
-    currentPage++;
-    renderPage(currentPage, canvas);  // Render the next page
-    updatePageDisplay(totalPages, currentPage);
-  }
-});
-
-document.getElementById('prev-page').addEventListener('click', function() {
-  saveCurrentPageAnnotations(canvas, currentPage);  // Save annotations before navigating
-  if (currentPage > 1) {
-    currentPage--;
-    renderPage(currentPage, canvas);  // Render the previous page
-    updatePageDisplay(totalPages, currentPage);
-  }
-});
-
-
-
-    document.getElementById('zoom-in').addEventListener('click', function() {
-      zoomIn(canvas);
-    });
-    document.getElementById('zoom-out').addEventListener('click', function() {
-      zoomOut(canvas);
-    });
-  
-    // Canvas object selection handler (to update font/line properties dynamically)
-    canvas.on('object:selected', function() {
-      const activeObject = canvas.getActiveObject();
-      if (activeObject) {
-        if (activeObject.type === 'i-text') {
-          document.getElementById('font-family').value = activeObject.fontFamily;
-          document.getElementById('font-size').value = activeObject.fontSize;
-          document.getElementById('font-color').value = activeObject.fill;
-        }
-        if (activeObject.stroke) {
-          document.getElementById('line-width').value = activeObject.strokeWidth;
-          document.getElementById('line-color').value = activeObject.stroke;
-        }
-      }
-    });
   });
-  
+
+  /////////////////////////////////
+  // 🛠️ Annotation Tool Bindings
+  /////////////////////////////////
+  const toolBindings = [
+    ['pointerButton', selectPointer],
+    ['addTextButton', addText],
+    ['signatureButton', openSignatureModal],
+    ['dateButton', addDate],
+    ['freeDrawButton', addFreeDraw],
+    ['highlighterButton', addHighlighter],
+    ['addLineButton', addLine],
+    ['addCircleButton', addCircle],
+    ['addRectangleButton', addRectangle],
+    ['addTriangleButton', addTriangle],
+    ['undoButton', undoLastAnnotation],
+    ['clearButton', clearAllAnnotations],
+  ];
+
+  toolBindings.forEach(([id, fn]) => {
+    document.getElementById(id)?.addEventListener('click', fn);
+  });
+
+  /////////////////////////////////
+  // ⬇️ Export Handler
+  /////////////////////////////////
+  downloadButton?.addEventListener('click', () => {
+    saveCurrentPageAnnotations(canvas, PDFState.currentPage);
+    const fileType = PDFState.originalPdfBytes ? 'PDF' : 'PNG';
+    download(canvas, fileType);
+  });
+
+  /////////////////////////////////
+  // 🔁 Page Navigation
+  /////////////////////////////////
+  document.getElementById('next-page')?.addEventListener('click', () => {
+    if (PDFState.currentPage < PDFState.totalPages) {
+      saveCurrentPageAnnotations(canvas, PDFState.currentPage);
+      PDFState.currentPage++;
+      renderPage(PDFState.currentPage, canvas);
+      updatePageDisplay(PDFState.totalPages, PDFState.currentPage);
+    }
+  });
+
+  document.getElementById('prev-page')?.addEventListener('click', () => {
+    if (PDFState.currentPage > 1) {
+      saveCurrentPageAnnotations(canvas, PDFState.currentPage);
+      PDFState.currentPage--;
+      renderPage(PDFState.currentPage, canvas);
+      updatePageDisplay(PDFState.totalPages, PDFState.currentPage);
+    }
+  });
+
+  /////////////////////////////////
+  // 🔍 Zoom Controls
+  /////////////////////////////////
+  document.getElementById('zoom-in')?.addEventListener('click', () => zoomIn(canvas));
+  document.getElementById('zoom-out')?.addEventListener('click', () => zoomOut(canvas));
+
+  /////////////////////////////////
+  // 🎯 Active Object Reflects UI
+  /////////////////////////////////
+  canvas.on('object:selected', () => {
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    if (active.type === 'i-text') {
+      document.getElementById('font-family').value = active.fontFamily || 'Arial';
+      document.getElementById('font-size').value = active.fontSize || 20;
+      document.getElementById('font-color').value = active.fill || '#000000';
+    }
+
+    if (active.stroke) {
+      document.getElementById('line-width').value = active.strokeWidth || 2;
+      document.getElementById('line-color').value = active.stroke || '#000000';
+    }
+  });
+
+  /////////////////////////////////
+  // 🎯 Optional: Deselect Cleanup
+  /////////////////////////////////
+  canvas.on('selection:cleared', () => {
+    // Optionally reset controls if no object is selected
+  });
+});
+
+document.getElementById('highlighter-color').addEventListener('change', () => {
+  if (canvas.isDrawingMode) {
+    canvas.freeDrawingBrush.color = document.getElementById('highlighter-color').value;
+  }
+});
+
+canvas.on('mouse:dblclick', (event) => {
+  if (!textToolEnabled) return;
+
+  handleTextClick(event); // reuse the existing logic
+});

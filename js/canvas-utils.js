@@ -1,207 +1,98 @@
-let undoStack = [];  // Stack to keep track of objects for undo
+// canvas-utils.js
 
-// Ensure that all objects added are pushed to the undo stack
-canvas.on('object:added', function(event) {
+let undoStack = [];
+
+// Push new objects to the undo stack
+canvas.on('object:added', (event) => {
   const obj = event.target;
   if (obj && obj !== canvas.backgroundImage) {
-    undoStack.push(obj);  // Add the object to the undo stack
-    console.log("Object added to undo stack:", obj);
+    undoStack.push(obj);
+    console.log("Added to undo stack:", obj);
+    if (typeof PDFState !== 'undefined') {
+      saveCurrentPageAnnotations(canvas, PDFState.currentPage);
+    }
   }
 });
 
-// Undo the last annotation
+// Undo the last object
 function undoLastAnnotation() {
-  if (undoStack.length > 0) {
-    const lastObject = undoStack.pop();  // Get the last object from the stack
-    canvas.remove(lastObject);  // Remove the last object from the canvas
-    canvas.renderAll();  // Re-render the canvas
-    console.log("Undo successful. Object removed:", lastObject);
+  const last = undoStack.pop();
+  if (last) {
+    canvas.remove(last);
+    canvas.renderAll();
+    console.log("Undo:", last);
   } else {
-    console.log("No more objects to undo.");
+    console.log("Undo stack is empty.");
   }
 }
 
-
+// Clear annotations but keep background
 function clearAllAnnotations() {
-  console.log("Clear All button clicked!");  // Add this line for debugging
-
-  const background = canvas.backgroundImage;
-  
-  // Clear the entire canvas
+  console.log("Clear All clicked!");
+  const bg = canvas.backgroundImage;
   canvas.clear();
-  
-  // Restore the background image if it exists
-  if (background) {
-    canvas.setBackgroundImage(background, canvas.renderAll.bind(canvas));
-  }
-
-  // Clear the undo stack
+  if (bg) canvas.setBackgroundImage(bg, canvas.renderAll.bind(canvas));
   undoStack = [];
-  
-  console.log("Cleared all annotations, background preserved.");
 }
 
+// Download handler
 function download(canvas, fileType) {
   if (fileType === 'PNG') {
     downloadAsPNG(canvas);
   } else if (fileType === 'PDF') {
-    downloadPDFWithAnnotations();
+    exportPDFAsVector(); // 🚀 Switched to vector-based export
   }
 }
 
+// PNG export
 function downloadAsPNG(canvas) {
-  const dataURL = canvas.toDataURL({
-    format: 'png',
-    quality: 1.0
-  });
-
+  const dataURL = canvas.toDataURL({ format: 'png', quality: 1.0 });
   const link = document.createElement('a');
   link.href = dataURL;
   link.download = 'annotated-image.png';
   link.click();
 }
 
-
-
-function downloadPDFWithAnnotations() {
-  // Get the actual dimensions of the canvas
-  const canvasWidth = canvas.getWidth();
-  const canvasHeight = canvas.getHeight();
-
-  // Determine orientation based on canvas dimensions
-  const orientation = canvasWidth > canvasHeight ? 'landscape' : 'portrait';
-
-  // Initialize jsPDF with custom dimensions and orientation
-  const pdf = new window.jspdf.jsPDF({
-    orientation: orientation,
-    unit: 'px',
-    format: [canvasWidth, canvasHeight] // Use the canvas dimensions
-  });
-
-  // Save annotations for the current page before starting download
-  saveCurrentPageAnnotations(canvas, currentPage);
-
-  const processPage = (pageNumber, callback) => {
-    const tempCanvas = document.createElement('canvas');
-    const tempContext = tempCanvas.getContext('2d');
-
-    pdfDoc.getPage(pageNumber).then(page => {
-      const viewport = page.getViewport({ scale: 1.0 });
-      tempCanvas.width = viewport.width;
-      tempCanvas.height = viewport.height;
-
-      console.log(`Rendering PDF page ${pageNumber} with exact dimensions: ${viewport.width}x${viewport.height}`);
-
-      // Render the PDF page onto the temporary canvas
-      page.render({
-        canvasContext: tempContext,
-        viewport: viewport
-      }).promise.then(() => {
-        console.log(`PDF page ${pageNumber} rendered on tempCanvas.`);
-
-        // Create a Fabric canvas with exact dimensions for adding annotations
-        const tempFabricCanvas = new fabric.Canvas(tempCanvas);
-        
-        // Ensure no scaling transformations affect the export
-        tempFabricCanvas.setDimensions({ width: viewport.width, height: viewport.height });
-        tempFabricCanvas.setZoom(1);
-
-        if (pageAnnotations[pageNumber]) {
-          console.log(`Loading annotations for page ${pageNumber}.`);
-
-          // Load annotations onto the Fabric canvas
-          tempFabricCanvas.loadFromJSON(pageAnnotations[pageNumber], () => {
-            tempFabricCanvas.renderAll();
-            console.log(`Annotations loaded for page ${pageNumber}.`);
-
-            // Capture the annotated canvas as an image and add it to the PDF
-            const dataURL = tempFabricCanvas.toDataURL('image/png');
-            if (pageNumber > 1) pdf.addPage();
-            pdf.addImage(dataURL, 'PNG', 0, 0, canvasWidth, canvasHeight);  // Use exact canvas dimensions here
-            callback();
-          });
-        } else {
-          // If no annotations, just add the rendered PDF page background
-          const pageDataURL = tempCanvas.toDataURL('image/png');
-          if (pageNumber > 1) pdf.addPage();
-          pdf.addImage(pageDataURL, 'PNG', 0, 0, canvasWidth, canvasHeight);  // Use exact canvas dimensions here
-          console.log(`Page ${pageNumber} added to PDF without annotations.`);
-          callback();
-        }
-      }).catch(error => {
-        console.error(`Error rendering page ${pageNumber}:`, error);
-      });
-    }).catch(error => {
-      console.error(`Error loading page ${pageNumber}:`, error);
-    });
-  };
-
-  // Sequentially render pages
-  const renderSequentially = (currentPage) => {
-    if (currentPage > totalPages) {
-      console.log("Saving PDF...");
-      pdf.save('annotated-version.pdf');
-    } else {
-      processPage(currentPage, () => renderSequentially(currentPage + 1));
-    }
-  };
-
-  renderSequentially(1);
-}
-
-
+// Save annotations for a given page
 function saveCurrentPageAnnotations(canvas, currentPage) {
-  if (canvas) {
-    // Serialize the canvas as JSON and save it to the pageAnnotations object
-    pageAnnotations[currentPage] = JSON.stringify(canvas);
-    console.log(`Annotations saved for page ${currentPage}.`);
-  } else {
-    console.warn(`Canvas not found while trying to save annotations for page ${currentPage}.`);
-  }
+  if (!canvas) return;
+  pageAnnotations[currentPage] = JSON.stringify(canvas);
+  console.log(`Saved annotations for page ${currentPage}`);
 }
 
+//////////////////////////////
+// Signature Modal Handling //
+//////////////////////////////
 
-
-// Line width and color change events
-document.getElementById('line-width').addEventListener('change', function() {
-  const selectedWidth = parseInt(this.value, 10);
-  canvas.freeDrawingBrush.width = selectedWidth;
-  if (canvas.getActiveObject() && canvas.getActiveObject().strokeWidth) {
-    canvas.getActiveObject().set('strokeWidth', selectedWidth);
-    canvas.renderAll();
-  }
-});
-
-document.getElementById('line-color').addEventListener('change', function() {
-  const selectedColor = this.value;
-  canvas.freeDrawingBrush.color = selectedColor;
-  if (canvas.getActiveObject() && canvas.getActiveObject().stroke) {
-    canvas.getActiveObject().set('stroke', selectedColor);
-    canvas.renderAll();
-  }
-});
-
-
-// Modal and signature canvas elements
 const signatureModal = document.getElementById('signature-modal');
 const signatureCanvas = document.getElementById('signature-canvas');
 const signatureCtx = signatureCanvas.getContext('2d');
-
-// Flag to check if the user is drawing
 let isSigning = false;
 
-// Open the signature modal
 function openSignatureModal() {
   signatureModal.classList.remove('hidden');
-  signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);  // Clear previous signatures
+  signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
 }
 
-// Close the signature modal
 function closeSignatureModal() {
   signatureModal.classList.add('hidden');
 }
 
-// Handle signature drawing on the canvas
+function clearSignature() {
+  signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+}
+
+function saveSignature() {
+  const signatureDataURL = signatureCanvas.toDataURL('image/png');
+  fabric.Image.fromURL(signatureDataURL, (img) => {
+    img.scale(0.5);
+    canvas.add(img);
+    canvas.renderAll();
+  });
+  closeSignatureModal();
+}
+
+// Signature drawing
 signatureCanvas.addEventListener('mousedown', (e) => {
   isSigning = true;
   signatureCtx.beginPath();
@@ -209,57 +100,359 @@ signatureCanvas.addEventListener('mousedown', (e) => {
 });
 
 signatureCanvas.addEventListener('mousemove', (e) => {
-  if (isSigning) {
-    signatureCtx.lineTo(e.offsetX, e.offsetY);
-    signatureCtx.strokeStyle = document.getElementById('signature-color').value;
-    signatureCtx.lineWidth = 2;
-    signatureCtx.stroke();
-  }
+  if (!isSigning) return;
+  signatureCtx.lineTo(e.offsetX, e.offsetY);
+  signatureCtx.strokeStyle = document.getElementById('signature-color').value;
+  signatureCtx.lineWidth = 2;
+  signatureCtx.stroke();
 });
 
-signatureCanvas.addEventListener('mouseup', () => {
-  isSigning = false;
-});
+signatureCanvas.addEventListener('mouseup', () => isSigning = false);
+signatureCanvas.addEventListener('mouseleave', () => isSigning = false);
 
-signatureCanvas.addEventListener('mouseleave', () => {
-  isSigning = false;
-});
+////////////////////
+// Add Date Tool //
+////////////////////
 
-// Clear the signature canvas
-function clearSignature() {
-  signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
-}
-
-// Save the signature and place it on the main canvas
-function saveSignature() {
-  const signatureDataURL = signatureCanvas.toDataURL('image/png');  // Save signature as PNG
-  fabric.Image.fromURL(signatureDataURL, function(img) {
-    img.scale(0.5);  // Scale down if needed
-    canvas.add(img);  // Add the signature image to the main canvas
-    canvas.renderAll();
-  });
-  closeSignatureModal();  // Close the modal after saving
-}
+let dateToolEnabled = false;
 
 function addDate() {
-  // Get today's date in MM/DD/YYYY format
+  deactivateAllTools();
+  dateToolEnabled = true;
+  canvas.defaultCursor = 'crosshair';
+
+  canvas.on('mouse:down', handleDatePlacement);
+}
+
+function handleDatePlacement(event) {
+  if (!dateToolEnabled) return;
+
+  const pointer = canvas.getPointer(event.e);
   const today = new Date();
   const formattedDate = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
 
-  // Create a new text object with the formatted date
-  const dateText = new fabric.Text(formattedDate, {
-    left: 50,  // Position where the date will appear (you can adjust)
-    top: 50,
-    fontSize: 24,  // Adjust the font size
-    fill: 'black',  // Default color (you can customize or add options)
+  const dateText = new fabric.IText(formattedDate, {
+    left: pointer.x,
+    top: pointer.y,
+    fontSize: 24,
+    fill: 'black',
     fontFamily: 'Arial',
-    selectable: true,  // Allow users to move/resize the date
+    selectable: true,
+    editable: true,
+    padding: 4,
+    lockScalingX: true,
+    lockScalingY: true,
+    lockUniScaling: true
   });
 
-  // Add the date text to the canvas
   canvas.add(dateText);
-  canvas.setActiveObject(dateText);  // Set it as the active object for easy editing/moving
-  canvas.renderAll();  // Re-render the canvas
+  canvas.setActiveObject(dateText);
 
-  console.log("Today's date added:", formattedDate);
+  setTimeout(() => {
+    canvas.setActiveObject(dateText);
+    dateText.enterEditing();
+    dateText.selectAll();
+  }, 50); // ← give the browser time to finish render stack
+  
+  saveCurrentPageAnnotations(canvas, currentPage);
+
+  deactivateDateTool();
+  selectPointer();
+}
+
+function deactivateDateTool() {
+  dateToolEnabled = false;
+  canvas.off('mouse:down', handleDatePlacement);
+}
+
+
+function handleDatePlaement(event) {
+  if (!dateToolEnabled) return;
+
+  const pointer = canvas.getPointer(event.e);
+  const today = new Date();
+  const formattedDate = `${String(today.getMonth() + 1).padStart(2, '0')}/${String(today.getDate()).padStart(2, '0')}/${today.getFullYear()}`;
+
+  const dateText = new fabric.Text(formattedDate, {
+    left: pointer.x,
+    top: pointer.y,
+    fontSize: 24,
+    fill: 'black',
+    fontFamily: 'Arial',
+    selectable: true,
+  });
+
+  canvas.add(dateText);
+  canvas.setActiveObject(dateText);
+  canvas.renderAll();
+
+  console.log("🗓️ Placed date at:", pointer);
+
+  // Disable date tool after placing
+  deactivateDateTool();
+  selectPointer(); // optional: return to pointer
+}
+
+function deactivateDateTool() {
+  dateToolEnabled = false;
+  canvas.off('mouse:down', handleDatePlacement);
+}
+
+//////////////////////////
+// Brush/Stroke Controls //
+//////////////////////////
+
+document.getElementById('line-width').addEventListener('change', function () {
+  const width = parseInt(this.value, 10);
+  canvas.freeDrawingBrush.width = width;
+  const obj = canvas.getActiveObject();
+  if (obj && obj.strokeWidth) {
+    obj.set('strokeWidth', width);
+    canvas.renderAll();
+  }
+});
+
+document.getElementById('line-color').addEventListener('change', function () {
+  const color = this.value;
+  canvas.freeDrawingBrush.color = color;
+  const obj = canvas.getActiveObject();
+  if (obj && obj.stroke) {
+    obj.set('stroke', color);
+    canvas.renderAll();
+  }
+});
+
+function fabricColorToRGBArray(fabricColor) {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.fillStyle = fabricColor || '#000000'; // Fallback to black if empty
+  const rgbMatch = ctx.fillStyle.match(/\d+/g);
+  const rgb = rgbMatch ? rgbMatch.map(Number) : [0, 0, 0]; // Defensive
+  return rgb.map(c => c / 255); // Normalize
+}
+
+function getSafeColor(colorValue) {
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = colorValue || '#000000';
+    const computedColor = ctx.fillStyle;
+
+    // Match "rgb(r, g, b)" format
+    let match = computedColor.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+    if (match) {
+      const r = parseInt(match[1], 10) / 255;
+      const g = parseInt(match[2], 10) / 255;
+      const b = parseInt(match[3], 10) / 255;
+      return PDFLib.rgb(r, g, b);
+    }
+
+    // Match hex color format "#rrggbb"
+    match = computedColor.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (match) {
+      const r = parseInt(match[1], 16) / 255;
+      const g = parseInt(match[2], 16) / 255;
+      const b = parseInt(match[3], 16) / 255;
+      return PDFLib.rgb(r, g, b);
+    }
+
+    // Match short hex "#rgb" (e.g. "#f00")
+    match = computedColor.match(/^#?([a-f\d])([a-f\d])([a-f\d])$/i);
+    if (match) {
+      const r = parseInt(match[1] + match[1], 16) / 255;
+      const g = parseInt(match[2] + match[2], 16) / 255;
+      const b = parseInt(match[3] + match[3], 16) / 255;
+      return PDFLib.rgb(r, g, b);
+    }
+
+    // Unknown format, fallback
+    return PDFLib.rgb(0, 0, 0);
+  } catch (err) {
+    console.warn('Failed to convert color:', colorValue, err);
+    return PDFLib.rgb(0, 0, 0); // Fallback
+  }
+}
+
+// ✨ UPDATED exportPDFAsVector()
+async function exportPDFAsVector() {
+  const { originalPdfBytes, pageAnnotations, totalPages, viewportSize } = PDFState;
+
+  if (!originalPdfBytes) {
+    console.error("No PDF loaded. Cannot export.");
+    return;
+  }
+
+  const pdfDoc = await PDFLib.PDFDocument.load(originalPdfBytes);
+  const pages = pdfDoc.getPages();
+
+  for (let i = 1; i <= totalPages; i++) {
+    const page = pages[i - 1];
+    const pageWidth = page.getWidth();
+    const pageHeight = page.getHeight();
+
+    const scaleX = 1;
+    const scaleY = 1;
+
+    const tempCanvas = document.createElement('canvas');
+    const fabricCanvas = new fabric.StaticCanvas(tempCanvas, {
+      width: pageWidth,
+      height: pageHeight
+    });
+
+    fabricCanvas.setZoom(1);
+    fabricCanvas.viewportTransform = [1, 0, 0, 1, 0, 0];
+
+    if (pageAnnotations[i]) {
+      await new Promise(resolve => {
+        fabricCanvas.loadFromJSON(pageAnnotations[i], async () => {
+          fabricCanvas.renderAll();
+
+          for (const obj of fabricCanvas.getObjects()) {
+            const hasFill = obj.fill && obj.fill !== 'transparent' && obj.fill !== 'rgba(0,0,0,0)';
+            const fillColor = hasFill ? getSafeColor(obj.fill) : undefined;
+
+            const hasStroke = obj.stroke && obj.stroke !== 'transparent' && obj.stroke !== 'rgba(0,0,0,0)';
+            const strokeColor = hasStroke ? getSafeColor(obj.stroke) : undefined;
+
+            const strokeWidth = obj.strokeWidth || 1;
+
+            const left = obj.left || 0;
+            const top = obj.top || 0;
+
+if (obj.type === 'path') {
+  // Detect if this is a highlighter
+  const isHighlighter = obj.stroke?.includes('rgba(255, 255, 0');
+
+  // Adjust settings for highlighter paths
+  const padding = isHighlighter ? 20 : 10;
+  const multiplier = isHighlighter ? 3 : 2;
+
+  // Create temp canvas
+  const temp = new fabric.StaticCanvas(null, {
+    width: obj.width + padding * 2,
+    height: obj.height + padding * 2
+  });
+
+  const cloned = fabric.util.object.clone(obj);
+  cloned.left = padding;
+  cloned.top = padding;
+
+  temp.add(cloned);
+  temp.renderAll();
+
+  const dataUrl = temp.toDataURL({
+    format: 'png',
+    multiplier: multiplier
+  });
+
+  const imgBytes = await fetch(dataUrl).then(res => res.arrayBuffer());
+  const img = await pdfDoc.embedPng(imgBytes);
+
+  const pdfX = (obj.left || 0) - padding;
+  const pdfY = pageHeight - (obj.top || 0) - obj.height - padding;
+
+  page.drawImage(img, {
+    x: pdfX,
+    y: pdfY,
+    width: obj.width + padding * 2,
+    height: obj.height + padding * 2
+  });
+}
+                                    
+            else if (obj.type === 'i-text' || obj.type === 'text') {
+              const fontSize = obj.fontSize || 16;
+              page.drawText(obj.text || '', {
+                x: left,
+                y: pageHeight - top - fontSize,
+                size: fontSize,
+                color: fillColor || getSafeColor('#000000'),
+                font: await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica),
+              });
+            }
+
+            else if (obj.type === 'rect') {
+              page.drawRectangle({
+                x: left,
+                y: pageHeight - top - obj.height,
+                width: obj.width,
+                height: obj.height,
+                color: fillColor,
+                borderColor: strokeColor,
+                borderWidth: strokeWidth
+              });
+            }
+
+            else if (obj.type === 'line') {
+              const start = fabric.util.transformPoint({ x: obj.x1, y: obj.y1 }, obj.calcTransformMatrix());
+              const end = fabric.util.transformPoint({ x: obj.x2, y: obj.y2 }, obj.calcTransformMatrix());
+
+              page.drawLine({
+                start: {
+                  x: start.x,
+                  y: pageHeight - start.y
+                },
+                end: {
+                  x: end.x,
+                  y: pageHeight - end.y
+                },
+                thickness: strokeWidth,
+                color: strokeColor || getSafeColor('#000000')
+              });
+            }
+
+            else if (obj.type === 'circle') {
+              const radius = obj.radius;
+              page.drawEllipse({
+                x: left + radius,
+                y: pageHeight - top - radius,
+                xScale: radius,
+                yScale: radius,
+                borderWidth: strokeWidth,
+                color: fillColor,
+                borderColor: strokeColor,
+              });
+            }
+
+            else if (obj.type === 'triangle') {
+              page.drawSvgPath(getTriangleSvgPath(obj), {
+                x: left,
+                y: pageHeight - top - obj.height,
+                scale: 1,
+                color: fillColor,
+                borderColor: strokeColor,
+                borderWidth: strokeWidth,
+              });
+            }
+
+            else if (obj.type === 'image') {
+              const dataUrl = obj.toDataURL();
+              const imgBytes = await fetch(dataUrl).then(res => res.arrayBuffer());
+              const img = await pdfDoc.embedPng(imgBytes);
+
+              page.drawImage(img, {
+                x: left,
+                y: pageHeight - top - obj.height,
+                width: obj.width,
+                height: obj.height
+              });
+            }
+          }
+
+          resolve();
+        });
+      });
+    }
+  }
+
+  const annotatedBytes = await pdfDoc.save();
+  const blob = new Blob([annotatedBytes], { type: 'application/pdf' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'annotated-vector.pdf';
+  link.click();
+}
+
+function getTriangleSvgPath(obj) {
+  // Fabric triangle defaults to 3 points: bottom-left, top-center, bottom-right
+  const w = obj.width || 0;
+  const h = obj.height || 0;
+  return `M 0 ${h} L ${w / 2} 0 L ${w} ${h} Z`;
 }

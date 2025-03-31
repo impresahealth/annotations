@@ -1,98 +1,127 @@
 // pdf-utils.js
+
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.worker.min.js';
+
 let pdfDoc = null;
+let originalPdfBytes = null;
 let totalPages = 0;
 let currentPage = 1;
-let zoomLevel = 1.0;  // Default zoom level
-let pageAnnotations = {};  // Store annotations for each page
+let zoomLevel = 1.0;
+let pageAnnotations = {};
 
+// Load a PDF file into canvas
 function renderPDF(file, canvas, updatePageDisplay) {
-  isPDF = true;  // Set flag to indicate PDF
+  isPDF = true;
   const reader = new FileReader();
-  reader.onload = function(event) {
-      const typedArray = new Uint8Array(event.target.result);
-      pdfjsLib.getDocument(typedArray).promise.then(function(pdf) {
-          pdfDoc = pdf;
-          totalPages = pdf.numPages;
-          currentPage = 1;
-          console.log("PDF loaded. Total pages:", totalPages);
-          renderPage(currentPage, canvas);  // Render the first page
-          updatePageDisplay(totalPages, currentPage);  // Update page display (for UI)
-      }).catch(function(error) {
-          console.error("Error loading PDF:", error);
-      });
+  reader.onload = function (event) {
+    const typedArray = new Uint8Array(event.target.result);
+    originalPdfBytes = typedArray;
+
+    pdfjsLib.getDocument(typedArray).promise
+      .then(function (pdf) {
+        pdfDoc = pdf;
+        totalPages = pdf.numPages;
+        currentPage = 1;
+        console.log("📄 PDF loaded:", totalPages, "pages");
+        renderPage(currentPage, canvas);
+        updatePageDisplay(totalPages, currentPage);
+      })
+      .catch(err => console.error("❌ Error loading PDF:", err));
   };
   reader.readAsArrayBuffer(file);
 }
 
+// Renders a single page of the PDF
 function renderPage(pageNumber, canvas) {
-  isPDF = true;  // Set flag to indicate PDF
-  pdfDoc.getPage(pageNumber).then(function(page) {
-    const viewport = page.getViewport({ scale: zoomLevel });
-
-    // Adjust canvas size based on the viewport (PDF page size)
+  pdfDoc.getPage(pageNumber).then(function (page) {
+    const viewport = page.getViewport({ scale: 1.0 }); // force 1:1
     canvas.setWidth(viewport.width);
     canvas.setHeight(viewport.height);
-
+    
+    // Save original size for export (optional)
+    PDFState.viewportSize = {
+      width: viewport.width,
+      height: viewport.height
+    };
+    PDFState.zoomLevel = 1.0;
+    
+    // Render PDF onto temp canvas
     const tempCanvas = document.createElement('canvas');
-    const tempContext = tempCanvas.getContext('2d');
     tempCanvas.width = viewport.width;
     tempCanvas.height = viewport.height;
+    const tempCtx = tempCanvas.getContext('2d');
 
-    // Render PDF page onto the temporary canvas
-    page.render({
-      canvasContext: tempContext,
-      viewport: viewport
-    }).promise.then(() => {
-      // Set the PDF page as the background image for the Fabric.js canvas
-      canvas.setBackgroundImage(tempCanvas.toDataURL(), canvas.renderAll.bind(canvas));
+    page.render({ canvasContext: tempCtx, viewport }).promise.then(() => {
+      const imgDataUrl = tempCanvas.toDataURL('image/png');
 
-      // Load saved annotations for this page or clear if none exist
+      // Set PDF page as background image on Fabric canvas
+      fabric.Image.fromURL(imgDataUrl, function (img) {
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+      });
+
+      // Load saved annotations
       if (pageAnnotations[pageNumber]) {
         canvas.loadFromJSON(pageAnnotations[pageNumber], canvas.renderAll.bind(canvas));
       } else {
-        canvas.clear();  // Clear annotations for a new page
+        canvas.clear();
+        canvas.setBackgroundImage(tempCanvas.toDataURL(), canvas.renderAll.bind(canvas));
       }
     });
   });
 }
 
-// Save annotations for the current page before navigating away
-function savePageAnnotations(canvas) {
-    pageAnnotations[currentPage] = JSON.stringify(canvas);
+// Zoom controls
+function zoomIn(canvas) {
+  zoomLevel += 0.1;
+  renderPage(currentPage, canvas);
 }
 
+function zoomOut(canvas) {
+  if (zoomLevel > 0.2) {
+    zoomLevel -= 0.1;
+    renderPage(currentPage, canvas);
+  }
+}
+
+// Page navigation
 function nextPage(canvas, updatePageDisplay) {
   if (currentPage < totalPages) {
-      console.log(`Navigating to next page: ${currentPage + 1}`);
-      savePageAnnotations(canvas);  
-      currentPage++;
-      renderPage(currentPage, canvas);  
-      updatePageDisplay(totalPages, currentPage);  
+    savePageAnnotations(canvas);
+    currentPage++;
+    renderPage(currentPage, canvas);
+    updatePageDisplay(totalPages, currentPage);
   }
 }
 
 function previousPage(canvas, updatePageDisplay) {
   if (currentPage > 1) {
-    savePageAnnotations(canvas);  // Save current annotations
+    savePageAnnotations(canvas);
     currentPage--;
-    renderPage(currentPage, canvas);  // Render the previous page
-    updatePageDisplay(totalPages, currentPage);  // Update display
+    renderPage(currentPage, canvas);
+    updatePageDisplay(totalPages, currentPage);
   }
 }
 
-function zoomIn(canvas) {
-  zoomLevel += 0.1;  // Increase zoom level
-  renderPage(currentPage, canvas);  // Re-render the current page with the new zoom level
+// Save annotations for the current page
+function savePageAnnotations(canvas) {
+  pageAnnotations[currentPage] = JSON.stringify(canvas);
 }
 
-function zoomOut(canvas) {
-  if (zoomLevel > 0.2) {
-    zoomLevel -= 0.1;  // Decrease zoom level
-    renderPage(currentPage, canvas);  // Re-render the current page with the new zoom level
+// Page number UI
+function updatePageDisplay(total, current) {
+  const el = document.getElementById('page-display');
+  if (el) {
+    el.innerText = `Page ${current} of ${total}`;
   }
 }
 
-function updatePageDisplay(totalPages, currentPage) {
-  document.getElementById('page-display').innerText = `Page ${currentPage} of ${totalPages}`;
-}
+// Exportable for other modules
+window.PDFState = {
+  get pdfDoc() { return pdfDoc },
+  get totalPages() { return totalPages },
+  get currentPage() { return currentPage },
+  get zoomLevel() { return zoomLevel },
+  get originalPdfBytes() { return originalPdfBytes },
+  get pageAnnotations() { return pageAnnotations },
+  set currentPage(val) { currentPage = val }
+};

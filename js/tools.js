@@ -1,329 +1,327 @@
+// tools.js
+
+//////////////////////
+// Text Tool
+//////////////////////
+
+let textToolEnabled = false;
+
 function addText() {
+  deactivateAllTools(); // clear existing tools
+  textToolEnabled = true;
+  canvas.defaultCursor = 'text';
+
   const textOptions = document.getElementById('text-options');
-  if (!textOptions) {
-    console.error('textOptions element is not found');
-    return;
-  }
-
-  if (!canvas) {
-    console.error('Canvas is not initialized');
-    return;
-  }
-
-  deactivateAllTools();
   textOptions.style.display = 'flex';
-  
-  console.log('addText function triggered');
 
-  canvas.off('mouse:down');
-  canvas.once('mouse:down', function(event) {
-    console.log('Mouse down event triggered');
-    const pointer = canvas.getPointer(event.e);
-    const text = new fabric.IText('Type here', {
-      left: pointer.x,
-      top: pointer.y,
-      fontSize: parseInt(document.getElementById('font-size').value, 10),
-      fill: document.getElementById('font-color').value,
-      fontFamily: document.getElementById('font-family').value,
-      width: 200,
-      lockScalingX: true,
-      lockScalingY: true,
-      lockUniScaling: true,
-      selectable: true,
-      editable: true
-    });
-    disableResizing(text);
-    text.on('changed', () => autoResizeTextBox(text));
-    canvas.add(text);
-    canvas.setActiveObject(text);
+  canvas.on('mouse:down', handleTextClick);
+}
+
+function handleTextClick(event) {
+  if (!textToolEnabled) return;
+
+  const pointer = canvas.getPointer(event.e);
+  const fontSize = parseInt(document.getElementById('font-size').value, 10);
+  const fontFamily = document.getElementById('font-family').value;
+  const color = document.getElementById('font-color').value;
+
+  const text = new fabric.IText('', {
+    left: pointer.x,
+    top: pointer.y,
+    fontSize,
+    fontFamily,
+    fill: color,
+    width: 300,
+    padding: 4,
+    lockScalingX: true,
+    lockScalingY: true,
+    lockUniScaling: true,
+    selectable: true,
+    editable: true
+  });
+
+  disableResizing(text);
+  applyFontSettings(text);
+  canvas.add(text);
+  canvas.setActiveObject(text);
+
+  setTimeout(() => {
     text.enterEditing();
     text.selectAll();
-    applyFontSettings(text);  // Ensure that font settings apply dynamically
-    canvas.off('mouse:down');
+  }, 0);
+
+  // Save once user finishes typing
+  text.on('editing:exited', () => {
+    saveCurrentPageAnnotations(canvas, currentPage);
   });
-  saveCurrentPageAnnotations(canvas, currentPage);
 }
-  
-  function autoResizeTextBox(text) {
-    text.set({
-      width: Math.max(text.width, 200),
-      height: text.calcTextHeight() + 10
-    });
-    canvas.renderAll();
-    saveCurrentPageAnnotations(canvas, currentPage);
+
+function deactivateTextTool() {
+  textToolEnabled = false;
+  canvas.off('mouse:down', handleTextClick);
+}
+
+
+function keepToolActive() {
+  return document.getElementById('multi-use-toggle')?.checked;
+}
+
+
+function applyFontSettings(textObject) {
+  const updateFont = () => {
+    if (canvas.getActiveObject() === textObject) {
+      textObject.set({
+        fontFamily: document.getElementById('font-family').value,
+        fontSize: parseInt(document.getElementById('font-size').value, 10),
+        fill: document.getElementById('font-color').value
+      });
+      canvas.renderAll();
+    }
+  };
+
+  ['font-family', 'font-size', 'font-color'].forEach(id =>
+    document.getElementById(id).addEventListener('change', updateFont)
+  );
+}
+
+function disableResizing(obj) {
+  obj.setControlsVisibility({
+    mt: false, mb: false, ml: false, mr: false, bl: false, br: false, tl: false, tr: false, mtr: true
+  });
+}
+
+//////////////////////
+// Free Draw & Highlighter
+//////////////////////
+
+function addFreeDraw() {
+  deactivateAllTools();
+
+  canvas.isDrawingMode = true;
+
+  // Make sure we are using a proper PencilBrush
+  if (!(canvas.freeDrawingBrush instanceof fabric.PencilBrush)) {
+    canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
   }
-  
-  function applyFontSettings(textObject) {
-    const updateFont = () => {
-      if (canvas.getActiveObject() === textObject) {
-        textObject.set({
-          fontFamily: document.getElementById('font-family').value,
-          fontSize: parseInt(document.getElementById('font-size').value, 10),
-          fill: document.getElementById('font-color').value
-        });
-        canvas.renderAll();
-      }
+
+  // Update brush based on current UI controls
+  const width = parseInt(document.getElementById('line-width').value, 10) || 2;
+  const color = document.getElementById('line-color').value || '#000000';
+
+  canvas.freeDrawingBrush.width = width;
+  canvas.freeDrawingBrush.color = color;
+
+  canvas.renderAll();
+  showToolbar();
+
+  console.log('🖋️ Freehand drawing mode activated');
+}
+
+function addHighlighter() {
+  deactivateAllTools();
+  canvas.isDrawingMode = true;
+
+  const highlighterColor = document.getElementById('highlighter-color')?.value || 'rgba(255, 255, 0, 0.4)';
+  canvas.freeDrawingBrush.width = 15;
+  canvas.freeDrawingBrush.color = highlighterColor;
+
+  showToolbar();
+  console.log('🖍️ Highlighter mode activated with color:', highlighterColor);
+}
+
+function updateBrushSettings() {
+  canvas.freeDrawingBrush.width = parseInt(document.getElementById('line-width').value, 10);
+  canvas.freeDrawingBrush.color = document.getElementById('line-color').value;
+}
+
+//////////////////////
+// Shape Tools (DRY)
+//////////////////////
+
+function addShape(shapeType) {
+  deactivateAllTools();
+  let isDrawing = false;
+  let shape;
+
+  canvas.on('mouse:down', function (o) {
+    isDrawing = true;
+    const pointer = canvas.getPointer(o.e);
+    const strokeWidth = parseInt(document.getElementById('line-width').value, 10);
+    const strokeColor = document.getElementById('line-color').value;
+
+    const baseOptions = {
+      left: pointer.x,
+      top: pointer.y,
+      strokeWidth,
+      stroke: strokeColor,
+      fill: null,
+      selectable: true,
+      evented: false
     };
-    document.getElementById('font-family').addEventListener('change', updateFont);
-    document.getElementById('font-size').addEventListener('change', updateFont);
-    document.getElementById('font-color').addEventListener('change', updateFont);
-    saveCurrentPageAnnotations(canvas, currentPage);
-  }
-  
-  function disableResizing(text) {
-    text.setControlsVisibility({
-      mt: false, mb: false, ml: false, mr: false, bl: false, br: false, tl: false, tr: false, mtr: true
-    });
-  }
-  
-  // Free Draw tool
-  function addFreeDraw() {
-    deactivateAllTools();  // Disable any other tools that may be active
-    canvas.isDrawingMode = true;  // Enable drawing mode on the canvas
 
-    // Dynamically set brush width and color from toolbar options
-    const selectedWidth = parseInt(document.getElementById('line-width').value, 10);
-    const selectedColor = document.getElementById('line-color').value;
-
-    // Ensure free drawing brush exists and apply settings
-    if (canvas.freeDrawingBrush) {
-        canvas.freeDrawingBrush.width = selectedWidth;  // Set the brush width
-        canvas.freeDrawingBrush.color = selectedColor;  // Set the brush color
+    switch (shapeType) {
+      case 'line':
+        shape = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
+          ...baseOptions
+        });
+        break;
+      case 'circle':
+        shape = new fabric.Circle({
+          ...baseOptions,
+          radius: 0
+        });
+        break;
+      case 'rect':
+        shape = new fabric.Rect({
+          ...baseOptions,
+          width: 0,
+          height: 0
+        });
+        break;
+      case 'triangle':
+        shape = new fabric.Triangle({
+          ...baseOptions,
+          width: 0,
+          height: 0
+        });
+        break;
     }
 
-    // Add event listeners to update the brush settings dynamically
-    document.getElementById('line-width').addEventListener('change', function() {
-        canvas.freeDrawingBrush.width = parseInt(this.value, 10);  // Update brush width dynamically
-    });
+    canvas.add(shape);
+  });
 
-    document.getElementById('line-color').addEventListener('change', function() {
-        canvas.freeDrawingBrush.color = this.value;  // Update brush color dynamically
-    });
+  canvas.on('mouse:move', function (o) {
+    if (!isDrawing) return;
+    const pointer = canvas.getPointer(o.e);
+    if (shapeType === 'line') {
+      shape.set({ x2: pointer.x, y2: pointer.y });
+    } else if (shapeType === 'circle') {
+      const radius = Math.sqrt(Math.pow(pointer.x - shape.left, 2) + Math.pow(pointer.y - shape.top, 2));
+      shape.set({ radius });
+    } else {
+      shape.set({
+        width: pointer.x - shape.left,
+        height: pointer.y - shape.top
+      });
+    }
+    canvas.renderAll();
+  });
 
-    showToolbar();  // Keep the toolbar visible for adjusting settings
+  canvas.on('mouse:up', function () {
+    isDrawing = false;
+    shape.set({ evented: true });
+    canvas.setActiveObject(shape);
+    canvas.off('mouse:down');
+    canvas.off('mouse:move');
     saveCurrentPageAnnotations(canvas, currentPage);
-}
-  // Highlighter Tool
-  function addHighlighter() {
-    deactivateAllTools();
-    canvas.isDrawingMode = true;
-    canvas.freeDrawingBrush.width = 15; // Set a thicker brush
-    canvas.freeDrawingBrush.color = 'rgba(255, 255, 0, 0.4)'; // Set transparent yellow for highlighter
-    showToolbar();
-    saveCurrentPageAnnotations(canvas, currentPage);
-  }
-  
-  // Line Tool
-  function addLine() {
-    deactivateAllTools();  // Deactivate all other tools
-    let isDrawing = false;
-    let line;
-
-    // Mouse down: Start drawing the line
-    canvas.on('mouse:down', function(o) {
-        isDrawing = true;
-        const pointer = canvas.getPointer(o.e);
-        const strokeWidth = parseInt(document.getElementById('line-width').value, 10);
-        const strokeColor = document.getElementById('line-color').value;
-
-        line = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
-            strokeWidth: strokeWidth,
-            stroke: strokeColor,
-            selectable: true,
-            evented: false,  // Temporarily disable interactions while drawing
-        });
-        canvas.add(line);
-    });
-
-    // Mouse move: Adjust the endpoint of the line
-    canvas.on('mouse:move', function(o) {
-        if (!isDrawing) return;
-        const pointer = canvas.getPointer(o.e);
-        line.set({ x2: pointer.x, y2: pointer.y });
-        canvas.renderAll();
-    });
-
-    // Mouse up: Finish drawing the line
-    canvas.on('mouse:up', function() {
-        isDrawing = false;
-        line.set({
-            evented: true,  // Re-enable object interaction after drawing
-        });
-        canvas.setActiveObject(line);
-        canvas.off('mouse:down');
-        canvas.off('mouse:move');
-    });
-    saveCurrentPageAnnotations(canvas, currentPage);
+  });
 }
 
-function addCircle() {
-  deactivateAllTools();  // Deactivate all other tools
-  let isDrawing = false;
-  let circle;
+// Individual shape functions
+const addLine = () => addShape('line');
+const addCircle = () => addShape('circle');
+const addRectangle = () => addShape('rect');
+const addTriangle = () => addShape('triangle');
 
-  canvas.on('mouse:down', function(o) {
-      isDrawing = true;
-      const pointer = canvas.getPointer(o.e);
-      const strokeWidth = parseInt(document.getElementById('line-width').value, 10);
-      const strokeColor = document.getElementById('line-color').value;
+//////////////////////
+// Tool State Mgmt
+//////////////////////
 
-      circle = new fabric.Circle({
-          left: pointer.x,
-          top: pointer.y,
-          radius: 0,
-          strokeWidth: strokeWidth,
-          stroke: strokeColor,
-          fill: 'transparent',
-          selectable: true,
-          evented: false,  // Temporarily disable interactions
-      });
-      canvas.add(circle);
-  });
-
-  canvas.on('mouse:move', function(o) {
-      if (!isDrawing) return;
-      const pointer = canvas.getPointer(o.e);
-      const radius = Math.sqrt(Math.pow(pointer.x - circle.left, 2) + Math.pow(pointer.y - circle.top, 2));
-      circle.set({ radius: radius });
-      canvas.renderAll();
-  });
-
-  canvas.on('mouse:up', function() {
-      isDrawing = false;
-      circle.set({
-          evented: true,  // Re-enable interactions after drawing
-      });
-      canvas.setActiveObject(circle);
-      canvas.off('mouse:down');
-      canvas.off('mouse:move');
-  });
-  saveCurrentPageAnnotations(canvas, currentPage);
-}
-
-function addRectangle() {
-  deactivateAllTools();  // Deactivate all other tools
-  let isDrawing = false;
-  let rect;
-
-  canvas.on('mouse:down', function(o) {
-      isDrawing = true;
-      const pointer = canvas.getPointer(o.e);
-      const strokeWidth = parseInt(document.getElementById('line-width').value, 10);
-      const strokeColor = document.getElementById('line-color').value;
-
-      rect = new fabric.Rect({
-          left: pointer.x,
-          top: pointer.y,
-          width: 0,
-          height: 0,
-          strokeWidth: strokeWidth,
-          stroke: strokeColor,
-          fill: 'transparent',
-          selectable: true,
-          evented: false,  // Temporarily disable interactions
-      });
-      canvas.add(rect);
-  });
-
-  canvas.on('mouse:move', function(o) {
-      if (!isDrawing) return;
-      const pointer = canvas.getPointer(o.e);
-      rect.set({ width: pointer.x - rect.left, height: pointer.y - rect.top });
-      canvas.renderAll();
-  });
-
-  canvas.on('mouse:up', function() {
-      isDrawing = false;
-      rect.set({
-          evented: true,  // Re-enable interactions
-      });
-      canvas.setActiveObject(rect);
-      canvas.off('mouse:down');
-      canvas.off('mouse:move');
-  });
-  saveCurrentPageAnnotations(canvas, currentPage);
-}
-
-function addTriangle() {
-  deactivateAllTools();  // Deactivate all other tools
-  let isDrawing = false;
-  let triangle;
-
-  canvas.on('mouse:down', function(o) {
-      isDrawing = true;
-      const pointer = canvas.getPointer(o.e);
-      const strokeWidth = parseInt(document.getElementById('line-width').value, 10);
-      const strokeColor = document.getElementById('line-color').value;
-
-      triangle = new fabric.Triangle({
-          left: pointer.x,
-          top: pointer.y,
-          width: 0,
-          height: 0,
-          strokeWidth: strokeWidth,
-          stroke: strokeColor,
-          fill: 'transparent',
-          selectable: true,
-          evented: false,  // Temporarily disable interactions
-      });
-      canvas.add(triangle);
-  });
-
-  canvas.on('mouse:move', function(o) {
-      if (!isDrawing) return;
-      const pointer = canvas.getPointer(o.e);
-      triangle.set({ width: pointer.x - triangle.left, height: pointer.y - triangle.top });
-      canvas.renderAll();
-  });
-
-  canvas.on('mouse:up', function() {
-      isDrawing = false;
-      triangle.set({
-          evented: true,  // Re-enable interactions
-      });
-      canvas.setActiveObject(triangle);
-      canvas.off('mouse:down');
-      canvas.off('mouse:move');
-  });
-  saveCurrentPageAnnotations(canvas, currentPage);
-}
-  
 function deactivateAllTools() {
-  canvas.isDrawingMode = false;  // Turn off drawing mode
-  canvas.selection = true;  // Re-enable selection for objects
-  
-  // Deselect active objects, if any
-  if (canvas.getActiveObject()) {
-    canvas.discardActiveObject();
-  }
-
-  // Clear only the event listeners relevant to drawing mode
+  canvas.isDrawingMode = false;
+  canvas.selection = true;
+  canvas.discardActiveObject();
   canvas.off('mouse:down');
   canvas.off('mouse:move');
   canvas.off('mouse:up');
-  
-  // This will make sure other toolbars are still visible
+  deactivateTextTool(); // <- clean up text
   hideToolbar();
+  deactivateDateTool();
 }
-    
-  // Show/Hide Free Draw Toolbar (or other toolbars if needed)
-  function showToolbar() {
-    document.getElementById('free-draw-toolbar').style.display = 'flex';
-  }
-  
-  function hideToolbar() {
-    // Prevent hiding the toolbar options
-    document.getElementById('free-draw-toolbar').style.display = 'flex';
-    document.getElementById('text-options').style.display = 'flex'; // Keep font settings visible
-  }
-  
-  
-  // Pointer tool for selecting objects
-function selectPointer() {
-  deactivateAllTools();  // Ensure all other tools are deactivated
 
-  // Enable object selection on the canvas
-  canvas.selection = true;  // Allow users to select objects
-  canvas.isDrawingMode = false;  // Disable any drawing mode
-  canvas.defaultCursor = 'default';  // Set the cursor to default
+function selectPointer() {
+  deactivateAllTools();
+  canvas.selection = true;
+  canvas.isDrawingMode = false;
+  canvas.defaultCursor = 'default';
 }
+
+function showToolbar() {
+  document.getElementById('free-draw-toolbar').style.display = 'flex';
+}
+
+function hideToolbar() {
+  document.getElementById('free-draw-toolbar').style.display = 'flex'; // keep visible
+  document.getElementById('text-options').style.display = 'flex';     // keep visible
+}
+
+const floatingTextarea = document.getElementById('floating-textarea');
+
+// Listen for double-click to open textarea
+canvas.on('mouse:dblclick', (event) => {
+  if (!textToolEnabled) return;
+
+  // Stop the mouse:down from also firing
+  event.e.preventDefault();
+  event.e.stopPropagation();
+
+  const pointer = canvas.getPointer(event.e);
+  const canvasEl = canvas.upperCanvasEl.getBoundingClientRect();
+
+  const canvasX = canvasEl.left + pointer.x;
+  const canvasY = canvasEl.top + pointer.y;
+
+  // Style and show the textarea
+  floatingTextarea.style.left = `${canvasX}px`;
+  floatingTextarea.style.top = `${canvasY}px`;
+  floatingTextarea.style.display = 'block';
+  floatingTextarea.classList.remove('hidden');
+  floatingTextarea.value = '';
+  floatingTextarea.focus();
+
+  // Save for later
+  floatingTextarea.dataset.x = pointer.x;
+  floatingTextarea.dataset.y = pointer.y;
+});
+
+// Handle blur or Enter press
+function finalizeFloatingText() {
+  const text = floatingTextarea.value.trim();
+  if (text) {
+    const x = parseFloat(floatingTextarea.dataset.x);
+    const y = parseFloat(floatingTextarea.dataset.y);
+
+    const fontSize = parseInt(document.getElementById('font-size').value, 10);
+    const fontFamily = document.getElementById('font-family').value;
+    const color = document.getElementById('font-color').value;
+
+    const textObj = new fabric.Text(text, {
+      left: x,
+      top: y,
+      fontSize,
+      fontFamily,
+      fill: color,
+      selectable: true,
+      padding: 4,
+    });
+
+    disableResizing(textObj);
+    canvas.add(textObj);
+    canvas.setActiveObject(textObj);
+    saveCurrentPageAnnotations(canvas, currentPage);
+  }
+
+  // Cleanup
+  floatingTextarea.style.display = 'none';
+  floatingTextarea.classList.add('hidden');
+  floatingTextarea.value = '';
+}
+
+// Trigger finalize on blur or Enter
+floatingTextarea.addEventListener('blur', finalizeFloatingText);
+floatingTextarea.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    floatingTextarea.blur(); // will trigger finalize
+  }
+});
