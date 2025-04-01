@@ -1,17 +1,20 @@
 // pdf-utils.js
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.worker.min.js';
-
 let pdfDoc = null;
 let originalPdfBytes = null;
 let totalPages = 0;
 let currentPage = 1;
 let zoomLevel = 1.0;
 let pageAnnotations = {};
+let isPDF = false; // 🔥 Moved to correct spot!
 
 // Load a PDF file into canvas
 function renderPDF(file, canvas, updatePageDisplay) {
-  isPDF = true;
+  PDFState.isPDF = true;
+  if (typeof resetCanvas === 'function') {
+    resetCanvas(canvas);
+  }
   const reader = new FileReader();
   reader.onload = function (event) {
     const typedArray = new Uint8Array(event.target.result);
@@ -31,44 +34,47 @@ function renderPDF(file, canvas, updatePageDisplay) {
   reader.readAsArrayBuffer(file);
 }
 
-// Renders a single page of the PDF
 function renderPage(pageNumber, canvas) {
   pdfDoc.getPage(pageNumber).then(function (page) {
-    const viewport = page.getViewport({ scale: 1.0 }); // force 1:1
+    const viewport = page.getViewport({ scale: 1.0 }); // Always start with 100% scale
     canvas.setWidth(viewport.width);
     canvas.setHeight(viewport.height);
-    
-    // Save original size for export (optional)
+
+    // Save original size for later export if needed
     PDFState.viewportSize = {
       width: viewport.width,
       height: viewport.height
     };
     PDFState.zoomLevel = 1.0;
-    
-    // Render PDF onto temp canvas
+
+    // Temporary canvas for PDF rendering
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = viewport.width;
     tempCanvas.height = viewport.height;
     const tempCtx = tempCanvas.getContext('2d');
 
+    // Render the page to the temporary canvas
     page.render({ canvasContext: tempCtx, viewport }).promise.then(() => {
       const imgDataUrl = tempCanvas.toDataURL('image/png');
 
-      // Set PDF page as background image on Fabric canvas
-      fabric.Image.fromURL(imgDataUrl, function (img) {
-        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-      });
+      // 💥 Always clear canvas before setting background
+      canvas.clear();
 
-      // Load saved annotations
-      if (pageAnnotations[pageNumber]) {
-        canvas.loadFromJSON(pageAnnotations[pageNumber], canvas.renderAll.bind(canvas));
-      } else {
-        canvas.clear();
-        canvas.setBackgroundImage(tempCanvas.toDataURL(), canvas.renderAll.bind(canvas));
-      }
+      // Set PDF page as background image
+      fabric.Image.fromURL(imgDataUrl, function (img) {
+        canvas.setBackgroundImage(img, () => {
+          // If we have saved annotations, load them
+          if (pageAnnotations[pageNumber]) {
+            canvas.loadFromJSON(pageAnnotations[pageNumber], canvas.renderAll.bind(canvas));
+          } else {
+            canvas.renderAll();
+          }
+        });
+      }, { crossOrigin: 'Anonymous' });
     });
   });
 }
+
 
 // Zoom controls
 function zoomIn(canvas) {
@@ -115,7 +121,6 @@ function updatePageDisplay(total, current) {
   }
 }
 
-// Exportable for other modules
 window.PDFState = {
   get pdfDoc() { return pdfDoc },
   get totalPages() { return totalPages },
@@ -123,5 +128,7 @@ window.PDFState = {
   get zoomLevel() { return zoomLevel },
   get originalPdfBytes() { return originalPdfBytes },
   get pageAnnotations() { return pageAnnotations },
-  set currentPage(val) { currentPage = val }
+  get isPDF() { return isPDF },
+  set currentPage(val) { currentPage = val },
+  set isPDF(val) { isPDF = val }
 };

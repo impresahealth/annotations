@@ -1,5 +1,4 @@
-let canvas = new fabric.Canvas('annotation-canvas');
-let isPDF = false;
+window.canvas = new fabric.Canvas('annotation-canvas');
 
 document.addEventListener('DOMContentLoaded', function() {
 
@@ -18,7 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
       fileInput.addEventListener('change', function(e) {
           const file = e.target.files[0];
           if (!file) return;
-
+          resetCanvas(canvas);
           const fileType = file.type;
           if (fileType === 'application/pdf') {
               renderPDF(file, canvas, updatePageDisplay);
@@ -33,13 +32,17 @@ document.addEventListener('DOMContentLoaded', function() {
   // Debounced zoom functions
   const debouncedZoomIn = debounce(() => {
       zoomLevel += 0.2;
-      renderPage(currentPage, canvas);
-  }, 200);
+      if (PDFState.isPDF) {
+        renderPage(PDFState.currentPage, canvas);
+      }
+        }, 200);
 
   const debouncedZoomOut = debounce(() => {
       zoomLevel -= 0.2;
-      renderPage(currentPage, canvas);
-  }, 200);
+      if (PDFState.isPDF) {
+        renderPage(PDFState.currentPage, canvas);
+      }
+        }, 200);
 
   if (zoomInBtn) {
       zoomInBtn.addEventListener('click', debouncedZoomIn);

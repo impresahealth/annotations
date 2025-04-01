@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fileUpload?.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
+    resetCanvas(canvas);
     if (file.type === 'application/pdf') {
       renderPDF(file, canvas, updatePageDisplay);
     } else if (file.type.startsWith('image/')) {
@@ -47,9 +47,10 @@ document.addEventListener('DOMContentLoaded', () => {
   /////////////////////////////////
   downloadButton?.addEventListener('click', () => {
     saveCurrentPageAnnotations(canvas, PDFState.currentPage);
-    const fileType = PDFState.originalPdfBytes ? 'PDF' : 'PNG';
+    const exportTypeSelect = document.getElementById('export-type');
+    const fileType = exportTypeSelect?.value || (PDFState.originalPdfBytes ? 'PDF' : 'PNG');
     download(canvas, fileType);
-  });
+      });
 
   /////////////////////////////////
   // 🔁 Page Navigation

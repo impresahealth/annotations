@@ -2,6 +2,31 @@
 
 let undoStack = [];
 
+function resetCanvas(canvas) {
+  if (!canvas) return;
+
+  console.log("🔁 Performing full canvas reset...");
+  canvas.clear();
+  canvas.setBackgroundImage(null, canvas.renderAll.bind(canvas));
+  canvas.setWidth(800);
+  canvas.setHeight(600);
+
+  undoStack = [];
+
+  if (typeof PDFState !== 'undefined') {
+    PDFState.pageAnnotations = {};
+    PDFState.currentPage = 1;
+    PDFState.zoomLevel = 1.0;
+  }
+
+  // 🧨 Also nuke global annotation cache
+  if (typeof pageAnnotations !== 'undefined') {
+    pageAnnotations = {}; // <--- important!
+  }
+
+  deactivateAllTools();
+}
+
 // Push new objects to the undo stack
 canvas.on('object:added', (event) => {
   const obj = event.target;
@@ -40,9 +65,13 @@ function download(canvas, fileType) {
   if (fileType === 'PNG') {
     downloadAsPNG(canvas);
   } else if (fileType === 'PDF') {
-    exportPDFAsVector(); // 🚀 Switched to vector-based export
+    if (PDFState.originalPdfBytes) {
+      exportPDFAsVector(); // working on actual PDF
+    } else {
+      exportImageAsPDF(canvas); // 📸 support image-based canvas
+    }
   }
-}
+  }
 
 // PNG export
 function downloadAsPNG(canvas) {
@@ -449,6 +478,38 @@ if (obj.type === 'path') {
   link.download = 'annotated-vector.pdf';
   link.click();
 }
+
+async function exportImageAsPDF(canvas) {
+  const pdfDoc = await PDFLib.PDFDocument.create();
+  const page = pdfDoc.addPage();
+
+  const dataUrl = canvas.toDataURL({
+    format: 'png',
+    multiplier: 2
+  });
+
+  const imgBytes = await fetch(dataUrl).then(res => res.arrayBuffer());
+  const img = await pdfDoc.embedPng(imgBytes);
+
+  const { width, height } = img.scale(1);
+  page.setSize(width, height);
+  page.drawImage(img, {
+    x: 0,
+    y: 0,
+    width,
+    height
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'annotated-image.pdf';
+  link.click();
+}
+
+
 
 function getTriangleSvgPath(obj) {
   // Fabric triangle defaults to 3 points: bottom-left, top-center, bottom-right

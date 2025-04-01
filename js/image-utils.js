@@ -1,5 +1,5 @@
 function renderImage(file, canvas) {
-  isPDF = false;  // Set flag to indicate PDF
+  PDFState.isPDF = false;
   const reader = new FileReader();
   reader.onload = function(event) {
     // Set desired canvas size (for example, 800x600)
